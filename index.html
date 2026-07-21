@@ -30,6 +30,17 @@ body{font-family:'Inter',system-ui,sans-serif;background:#0d0f17;color:var(--tex
 #dbz-bg img{width:100%;height:100%;object-fit:cover;object-position:center;display:block;}
 #dbz-bg .overlay{position:absolute;inset:0;background:rgba(5,5,15,0.72);}
 body>*:not(#dbz-bg){position:relative;z-index:1;}
+#login-screen{position:fixed;inset:0;z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(5,5,15,0.88);backdrop-filter:blur(8px);}
+#app-content{display:block;}
+.login-card{background:var(--surface);border:.5px solid var(--border2);border-radius:20px;padding:2.5rem 2rem;text-align:center;max-width:340px;width:90%;}
+.login-title{font-size:1.4rem;font-weight:600;margin-bottom:.5rem;background:linear-gradient(135deg,#e4e7f2,#8891b8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.login-sub{font-size:.8rem;color:var(--text-muted);margin-bottom:2rem;}
+.btn-google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;background:#fff;color:#1f1f1f;border:none;border-radius:10px;padding:.75rem 1rem;font-family:inherit;font-size:.9rem;font-weight:600;cursor:pointer;transition:opacity .15s;}
+.btn-google:hover{opacity:.9;}
+.btn-google img{width:20px;height:20px;}
+.user-bar{display:flex;align-items:center;gap:10px;max-width:1180px;margin:0 auto .75rem;font-size:.75rem;color:var(--text-muted);}
+.btn-logout{background:rgba(239,68,68,.1);border:.5px solid rgba(239,68,68,.3);border-radius:8px;color:#f87171;font-family:inherit;font-size:.72rem;padding:4px 10px;cursor:pointer;}
+.btn-logout:hover{background:rgba(239,68,68,.2);}
 
 /* SYNC BANNER */
 .sync-bar{max-width:1180px;margin:0 auto 1rem;padding:8px 14px;border-radius:10px;font-size:.75rem;display:flex;align-items:center;gap:8px;transition:all .3s;}
@@ -144,6 +155,22 @@ body>*:not(#dbz-bg){position:relative;z-index:1;}
   <div class="overlay"></div>
 </div>
 
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-title">🗓 RTT Sully</div>
+    <div class="login-sub">Connecte-toi pour accéder à ton gestionnaire RTT synchronisé</div>
+    <button class="btn-google" onclick="loginWithGoogle()">
+      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+      Se connecter avec Google
+    </button>
+  </div>
+</div>
+
+<div id="app-content">
+<div class="user-bar">
+  <span>👤 <span id="user-name"></span></span>
+  <button class="btn-logout" onclick="logoutGoogle()">Déconnexion</button>
+</div>
 <div class="sync-bar syncing" id="sync-bar">
   <div class="sync-dot"></div>
   <span id="sync-txt">Connexion en cours…</span>
@@ -203,7 +230,8 @@ body>*:not(#dbz-bg){position:relative;z-index:1;}
 <!-- Firebase SDK -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
-import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDj4QuT0qI0xs6tIxR5JFYjRS6gHFKDmRs",
@@ -217,7 +245,10 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
 const DOC_ID = "sully";
+let unsubscribe = null;
 
 function setSyncStatus(status, msg) {
   const bar = document.getElementById("sync-bar");
@@ -226,43 +257,72 @@ function setSyncStatus(status, msg) {
   txt.textContent = msg;
 }
 
-// Save to Firestore
+function showLoginScreen(show) {
+  document.getElementById("login-screen").style.display = show ? "flex" : "none";
+  document.getElementById("app-content").style.display = show ? "none" : "block";
+}
+
+window.loginWithGoogle = async function() {
+  try {
+    setSyncStatus("syncing", "Connexion en cours…");
+    await signInWithPopup(auth, provider);
+  } catch(e) {
+    setSyncStatus("error", "⚠ Erreur de connexion");
+    console.error(e);
+  }
+};
+
+window.logoutGoogle = async function() {
+  if(unsubscribe) unsubscribe();
+  await signOut(auth);
+  showLoginScreen(true);
+};
+
 window.saveToFirestore = async function() {
+  const user = auth.currentUser;
+  if(!user) return;
   try {
     setSyncStatus("syncing", "Synchronisation…");
-    await setDoc(doc(db, "rtt", DOC_ID), {
+    await setDoc(doc(db, "users", user.uid), {
       rttData: JSON.stringify(window.rttData),
       cpData: JSON.stringify(window.cpData),
       updatedAt: new Date().toISOString()
     });
     setSyncStatus("synced", "✓ Synchronisé — " + new Date().toLocaleTimeString("fr-FR"));
   } catch(e) {
-    setSyncStatus("error", "⚠ Hors ligne — données locales");
+    setSyncStatus("error", "⚠ Erreur sync");
     console.error(e);
   }
 };
 
-// Listen for real-time updates
-onSnapshot(doc(db, "rtt", DOC_ID), (snap) => {
-  if (snap.exists()) {
-    const data = snap.data();
-    try {
-      const newRtt = JSON.parse(data.rttData);
-      const newCp  = JSON.parse(data.cpData);
-      // Convert string keys back to numbers for rttData
-      const rttFixed = {};
-      Object.entries(newRtt).forEach(([k,v]) => { rttFixed[parseInt(k)] = v; });
-      window.rttData = rttFixed;
-      window.cpData  = newCp;
-      window.renderAll();
-      setSyncStatus("synced", "✓ Synchronisé — " + new Date().toLocaleTimeString("fr-FR"));
-    } catch(e) { console.error(e); }
+onAuthStateChanged(auth, (user) => {
+  if(user) {
+    // Update logout button
+    document.getElementById("user-name").textContent = user.displayName || user.email;
+    showLoginScreen(false);
+    // Listen for data
+    unsubscribe = onSnapshot(doc(db, "users", user.uid), (snap) => {
+      if(snap.exists()) {
+        const data = snap.data();
+        try {
+          const newRtt = JSON.parse(data.rttData);
+          const newCp = JSON.parse(data.cpData);
+          const rttFixed = {};
+          Object.entries(newRtt).forEach(([k,v]) => { rttFixed[parseInt(k)] = v; });
+          window.rttData = rttFixed;
+          window.cpData = newCp;
+          window.renderAll();
+          setSyncStatus("synced", "✓ Synchronisé — " + new Date().toLocaleTimeString("fr-FR"));
+        } catch(e) { console.error(e); }
+      } else {
+        window.saveToFirestore();
+      }
+    }, (err) => {
+      setSyncStatus("error", "⚠ Hors ligne");
+    });
   } else {
-    // First time — push local data
-    window.saveToFirestore();
+    showLoginScreen(true);
   }
-}, (err) => {
-  setSyncStatus("error", "⚠ Hors ligne — données locales");
 });
 
 </script>
@@ -549,5 +609,6 @@ if("serviceWorker" in navigator){
   navigator.serviceWorker.register("sw.js").then(()=>console.log("SW registered"));
 }
 </script>
+</div>
 </body>
 </html>
