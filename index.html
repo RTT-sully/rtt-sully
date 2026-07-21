@@ -498,10 +498,10 @@ function openModal(key){
     else if(ex.note==="Matin"){modalOpt="am";document.getElementById("ob-am").className="ob sel-half";}
     else{modalOpt="pm";document.getElementById("ob-pm").className="ob sel-half";}
   } else document.getElementById("rm-row").style.display="none";
-  document.getElementById("overlay").classList.add("open");
-  document.body.style.overflow = "hidden";
-  document.body.style.position = "fixed";
-  document.body.style.width = "100%";
+  window.scrollTo(0, 0);
+  setTimeout(() => {
+    document.getElementById("overlay").classList.add("open");
+  }, 300);
 }
 
 function selOpt(opt){
@@ -540,9 +540,6 @@ function confirmModal(){
 
 function closeModal(){
   document.getElementById("overlay").classList.remove("open");
-  document.body.style.overflow = "";
-  document.body.style.position = "";
-  document.body.style.width = "";
   modalDate=null;
 }
 function deleteRTT(key){delete window.rttData[activeCycle][key];renderAll();if(window.saveToFirestore)window.saveToFirestore();}
